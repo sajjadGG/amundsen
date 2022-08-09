@@ -46,6 +46,7 @@ from databuilder.transformer.dict_to_model import MODEL_CLASS, DictToModel
 from databuilder.transformer.generic_transformer import (
     CALLBACK_FUNCTION, FIELD_NAME, GenericTransformer,
 )
+from databuilder.task.search.search_metadata_to_elasticsearch_task import SearchMetadatatoElasticasearchTask
 
 es_host = os.getenv('CREDENTIALS_ELASTICSEARCH_PROXY_HOST', 'localhost')
 neo_host = os.getenv('CREDENTIALS_NEO4J_PROXY_HOST', 'localhost')
@@ -350,6 +351,37 @@ def create_es_publisher_sample_job(elasticsearch_index_alias='table_search_index
     return job
 
 
+def run_search_metadata_task(resource_type: str):
+    task_config = {
+        f'task.search_metadata_to_elasticsearch.{SearchMetadatatoElasticasearchTask.ENTITY_TYPE}':
+            resource_type,
+        f'task.search_metadata_to_elasticsearch.{SearchMetadatatoElasticasearchTask.ELASTICSEARCH_CLIENT_CONFIG_KEY}':
+            es,
+        f'task.search_metadata_to_elasticsearch.{SearchMetadatatoElasticasearchTask.ELASTICSEARCH_ALIAS_CONFIG_KEY}':
+            f'{resource_type}_search_index',
+        'extractor.search_data.entity_type':
+            resource_type,
+        'extractor.search_data.extractor.neo4j.graph_url':
+            neo4j_endpoint,
+        'extractor.search_data.extractor.neo4j.neo4j_auth_user':
+            neo4j_user,
+        'extractor.search_data.extractor.neo4j.neo4j_auth_pw':
+            neo4j_password,
+        'extractor.search_data.extractor.neo4j.neo4j_encrypted':
+            False,
+    }
+
+    job_config = ConfigFactory.from_dict({
+        **task_config,
+    })
+
+    extractor = Neo4jSearchDataExtractor()
+    task = SearchMetadatatoElasticasearchTask(extractor=extractor)
+
+    job = DefaultJob(conf=job_config, task=task)
+
+    job.launch()
+
 if __name__ == "__main__":
     # Uncomment next line to get INFO level logging
     # logging.basicConfig(level=logging.INFO)
@@ -399,25 +431,6 @@ if __name__ == "__main__":
 
     create_last_updated_job().launch()
 
-    job_es_table = create_es_publisher_sample_job(
-        elasticsearch_index_alias='table_search_index',
-        elasticsearch_doc_type_key='table',
-        entity_type='table',
-        model_name='databuilder.models.table_elasticsearch_document.TableESDocument')
-    job_es_table.launch()
+    for resource_type in ['table', 'dashboard', 'user']:
+        run_search_metadata_task(resource_type)
 
-    job_es_user = create_es_publisher_sample_job(
-        elasticsearch_index_alias='user_search_index',
-        elasticsearch_doc_type_key='user',
-        model_name='databuilder.models.user_elasticsearch_document.UserESDocument',
-        entity_type='user',
-        elasticsearch_mapping=USER_INDEX_MAP)
-    job_es_user.launch()
-
-    job_es_dashboard = create_es_publisher_sample_job(
-        elasticsearch_index_alias='dashboard_search_index',
-        elasticsearch_doc_type_key='dashboard',
-        model_name='databuilder.models.dashboard_elasticsearch_document.DashboardESDocument',
-        entity_type='dashboard',
-        elasticsearch_mapping=DASHBOARD_ELASTICSEARCH_INDEX_MAPPING)
-    job_es_dashboard.launch()
